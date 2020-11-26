@@ -1,0 +1,4 @@
+*.sw*
+*.py
+data/glove.42B.300d.txt.pt
+__pycache__*
