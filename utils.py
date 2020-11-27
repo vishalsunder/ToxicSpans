@@ -1,0 +1,152 @@
+import pandas as pd
+import numpy as np
+import random
+import math
+import re
+import json
+import string
+import torch
+import pdb
+exclude = set(string.punctuation)
+exclude2 = set([',','.','?','"','!'])
+
+def span2target(span, text):
+    tokens = re.split(' |\n',text)
+    target = [0]*len(tokens)
+    span_list = json.loads(span)
+    if len(span_list) == 0:
+        return target
+    word_label = []
+    for i, t in enumerate(tokens):
+        if i > 0:
+            word_label.append(-1)
+        for ch in t:
+            word_label.append(i)
+    assert word_label[-1]+1 == len(tokens)
+    ws_set = set([word_label[i] for i in span_list])
+    if -1 in ws_set:
+        ws_set.remove(-1)
+    word_span = sorted(list(ws_set))
+    for word_id in word_span:
+        target[word_id] = 1
+    return target
+
+def target2span(target, text):
+    tokens = re.split(' |\n',text)
+    target_ind = []
+    for i,t in enumerate(target):
+        if t==1:
+            target_ind.append(i)
+    if len(target_ind) == 0:
+        return target_ind
+    word_label = []
+    char_label = []
+    j = 0
+    for i, t in enumerate(tokens):
+        if i > 0:
+            word_label.append(-1)
+            k = 1
+            while text[j-k] in exclude2 and j-k >= 0:
+                word_label[-1-k] = -1
+                k += 1
+            char_label.append(j)
+            j+=1
+        for ch in t:
+            if ch in exclude:
+                word_label.append(-1)
+            else:
+                word_label.append(i)
+            char_label.append(j)
+            j+=1
+    k = 1
+    while text[-k] in exclude2 and k>=0:
+        word_label[-k] = -1
+        k += 1
+    spans = []
+    for i, wl in enumerate(word_label):
+        if wl in target_ind:
+            spans.append(i)
+    spans_ = []
+    prev = -100
+    for i in spans:
+        if i - prev == 2:
+            spans_.append(i-1)
+        spans_.append(i)
+        prev = i
+    return spans_
+
+class Dictionary(object):
+    def __init__(self, path=''):
+        self.word2idx = dict()
+        self.idx2word = list()
+        if path != '':
+            words = json.loads(open(path, 'r').readline())
+            for item in words:
+                self.add_word(item)
+
+    def add_word(self, word):
+        if word not in self.word2idx:
+            self.idx2word.append(word)
+            self.word2idx[word] = len(self.idx2word) - 1
+        return self.word2idx[word]
+
+    def __len__(self):
+        return len(self.idx2word)
+
+def clean_str(string):
+    lst = re.split(' |\n',string)
+    cstr = []
+    for token in lst:
+        token = token.lower()
+        cleaned = re.sub("[^a-z0-9*]", "", token)
+        if cleaned == "":
+            cleaned = '<pad>'
+        cstr.append(cleaned)
+    return cstr
+
+class DataIns(object):
+    def __init__(self, df, dictionary):
+        self.raw_text = df['text']
+        self.spans = df['spans']
+        self.dictionary = dictionary
+        self.target = span2target(df['spans'], df['text'])
+        self.data = self._pack()
+    
+    def _pack(self):
+        cleaned = clean_str(self.raw_text)
+        return [self.dictionary.word2idx[y] for y in cleaned]
+
+    def __len__(self):
+        return len(self.data)
+
+class DataSet(object):
+    def __init__(self, df, dictionary):
+        self._data = []
+        self.data_list = []
+        self.dictionary = dictionary
+        for i, row in df.iterrows():
+            di = DataIns(row, dictionary)
+            self.data_list.append(di)
+            self._data.append({'text':di.raw_text, 'spans':di.spans})
+        self.data, self.target, self.mask = self._pack()
+        
+    def _pack(self):
+        max_len = max([len(x) for x in self.data_list])
+        mask = []
+        targets = []
+        seqs = []
+        for di in self.data_list:
+            mask.append([1]*len(di)+[0]*(max_len - len(di)))
+            targets.append(di.target + [-1]*(max_len - len(di)))
+            seqs.append(di.data + [self.dictionary.word2idx['<pad>'] for _ in range(max_len - len(di))])
+        return torch.tensor(seqs, dtype=torch.long).t(), torch.tensor(targets, dtype=torch.long), torch.tensor(mask, dtype=torch.long)
+
+    def __getitem__(self, index):
+        return self._data[index]
+
+    def __len__(self):
+        return len(self._data)    
+
+    def seq_len(self, index):
+        return len(self.data_list[index])
+            
