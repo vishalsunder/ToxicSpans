@@ -58,7 +58,10 @@ class Trainer:
     def get_span(self, prediction, mask, data):
         output = []
         for i, pred_tens in enumerate(prediction):
-            output.append(target2span(pred_tens[mask[i] != 0].tolist(), data[i]['text']))
+            try:
+                output.append(target2span(pred_tens[mask[i] != 0].tolist(), data[i]['text']))
+            except:
+                pdb.set_trace()
         return output
 
     def evaluate(self, model, data_val, bsz = 32):
@@ -75,16 +78,26 @@ class Trainer:
             data_batch = DataSet(indata, self.dictionary, is_train=False)
             data, targets, mask = data_batch.get_tensor()
             data, targets, mask = data.to(self.device), targets.to(self.device), mask.to(self.device)
-            hidden = model.init_hidden(bsz)
-            output = model.forward(data, hidden)
+            hidden = model.init_hidden(data.size(1))
+            output = model.forward(data, hidden, mask)
+
+            #prediction = torch.max(output, dim=2)[1] # bsz, conv_len
+            #prediction_ = prediction[mask != 0]
+            #targets_ = targets[mask != 0]
+            #y_pred.extend(prediction_.cpu().tolist())
+            #y_true.extend(targets_.cpu().tolist())
+
             prediction = self.get_span(torch.max(output, dim=2)[1].cpu(), mask.cpu(), data_batch) # bsz, seq_len
             y_pred.extend(prediction)
             y_true.extend([data_batch[i]['spans'] for i in range(len(data_batch))])
+
             sys.stdout.write("[%-20s] %d%%" % ('='*int(20*j), 100*j))
             sys.stdout.flush()
             sleep(0)
         print('\n')
+        #pdb.set_trace()
         f1 = f1_metric(y_true, y_pred)
+        #f1 = f1_score(y_true, y_pred, list(set(y_true)), average='macro')
         return f1, y_pred, y_true
 
     def forward(self, i, model, data, bsz=32):
@@ -93,8 +106,8 @@ class Trainer:
         data_batch = DataSet(indata, self.dictionary)
         data, targets, mask = data_batch.get_tensor() 
         data, targets, mask = data.to(self.device), targets.to(self.device), mask.to(self.device)
-        hidden = model.init_hidden(bsz)
-        output = model.forward(data, hidden) # output --> bsz, seq_len, nclasses
+        hidden = model.init_hidden(data.size(1))
+        output = model.forward(data, hidden, mask) # output --> bsz, seq_len, nclasses
         output_ = output[mask != 0]
         targets_ = targets[mask != 0]
         loss = self.criterion(output_, targets_)

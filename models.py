@@ -25,7 +25,7 @@ class Embed(nn.Module):
                 for word in self.dictionary.word2idx:
                     if word not in vocab:
                         to_add = torch.zeros_like(vectors[0]).uniform_(-0.25,0.25)
-                        print("uncached word: " + word)
+                        #print("uncached word: " + word)
                         unseen_cnt += 1
                         #print(to_add)
                     else:
@@ -72,10 +72,12 @@ class Attention(NoAttention):
         self.Wk = nn.Linear(inp_size, inp_size, bias=False)
         self.drop = nn.Dropout(dropout)
 
-    def forward(self, input): # seq_len, bsz, inp_size
+    def forward(self, input, mask): # seq_len, bsz, inp_size; mask = bsz, seq_len
         query = self.Wq(self.drop(input))
         key = self.Wk(self.drop(input))
-        align = torch.softmax(torch.tanh(torch.bmm(query.permute(1,0,2), key.permute(1,2,0))/(input.size(2))**0.5), dim=2) # bsz, seq_len, seq_len
+        mask_ = 1. - torch.cat([mask.unsqueeze(1) for _ in range(input.size(0))], dim=1)
+        align = torch.tanh(torch.bmm(query.permute(1,0,2), key.permute(1,2,0))/(input.size(2))**0.5) - 10000*mask_ # bsz, seq_len, seq_len
+        align = torch.softmax(align, dim=2)
         return torch.bmm(align, input.permute(1,0,2)).permute(1,0,2)
 
 class Classifier(nn.Module):
@@ -92,7 +94,7 @@ class SpanModel(nn.Module):
     def __init__(self, config):
         super(SpanModel, self).__init__()
         self.emb = Embed(config['ntoken'], config['dictionary'], config['ninp'], config['word-vector'])
-        self.rnn = RNN(config['ninp'], config['nhid'], config['nlayers'])
+        self.rnn = RNN(config['ninp'], config['nhid'], config['nlayers'], config['dropout'])
         if config['attention']:
             self.attention = Attention(2 * config['nhid'], config['dropout'])
         else:
@@ -102,9 +104,9 @@ class SpanModel(nn.Module):
     def init_hidden(self, bsz):
         return self.rnn.init_hidden(bsz)
 
-    def forward(self, input, hidden):
+    def forward(self, input, hidden, mask):
         emb_out = self.emb(input)
         rnn_out = self.rnn(emb_out, hidden)
-        att_out = self.attention(rnn_out)
+        att_out = self.attention(rnn_out, mask)
         scores = self.classifier(att_out) #seq_len, bsz, nclasses
         return scores.permute(1,0,2).contiguous() #bsz, seq_len, nclasses

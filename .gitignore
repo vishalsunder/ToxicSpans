@@ -1,4 +1,6 @@
 *.sw*
 data/glove.42B.300d.txt.pt
 scribble.py
+logs/
+*.sh
 __pycache__*

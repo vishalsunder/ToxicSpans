@@ -14,11 +14,27 @@ exclude2 = set([',','.','?','"','!'])
 def f1_metric(target, prediction):
     f1 = []
     for y_t, y_p in zip(target, prediction):
-        P = 1. * len(set(y_t) & set(y_p))/len(set(y_p))
-        R = 1. * len(set(y_t) & set(y_p))/len(set(y_t))
-        f1.append(2.*P*R / (P + R))
+        if len(set(y_p)) == 0 and len(set(y_t)) == 0:
+            f1.append(1.)
+        elif len(set(y_p)) == 0 and len(set(y_t)) != 0:
+            f1.append(0.)
+        elif len(set(y_t)) == 0:
+            f1.append(0.)                
+        else:
+            P = 1. * len(set(y_t) & set(y_p))/len(set(y_p))
+            R = 1. * len(set(y_t) & set(y_p))/len(set(y_t))
+            if P + R == 0:
+                f1.append(0.)
+            else:
+                f1.append(2.*P*R / (P + R))
     return np.mean(f1)
     
+def split_dev(data, frac=0.1):
+    dev_len = int(frac*len(data))
+    indices = list(range(len(data)))
+    random.shuffle(indices)
+    dev_ind, train_ind = indices[:dev_len], indices[dev_len:]
+    return data.iloc[train_ind], data.iloc[dev_ind]
 
 def span2target(span, text):
     tokens = re.split(' |\n',text)
@@ -33,7 +49,10 @@ def span2target(span, text):
         for ch in t:
             word_label.append(i)
     assert word_label[-1]+1 == len(tokens)
-    ws_set = set([word_label[i] for i in span_list])
+    try:
+        ws_set = set([word_label[i] for i in span_list])
+    except:
+        pdb.set_trace()
     if -1 in ws_set:
         ws_set.remove(-1)
     word_span = sorted(list(ws_set))
@@ -131,13 +150,13 @@ class DataIns(object):
 
 class DataSet(object):
     def __init__(self, df, dictionary, is_train=True):
-        self._data = []
+        self._data_raw = []
         self.data_list = []
         self.dictionary = dictionary
         for i, row in df.iterrows():
             di = DataIns(row, dictionary)
             self.data_list.append(di)
-            self._data.append({'text':di.raw_text, 'spans':di.spans})
+            self._data_raw.append({'text':di.raw_text, 'spans':json.loads(di.spans)})
         self._data, self._target, self._mask = self._pack(is_train=is_train)
 
     def get_tensor(self):
@@ -157,10 +176,10 @@ class DataSet(object):
         return se, ta, ma
 
     def __getitem__(self, index):
-        return self._data[index]
+        return self._data_raw[index]
 
     def __len__(self):
-        return len(self._data)    
+        return len(self._data_raw)    
 
     def seq_len(self, index):
         return len(self.data_list[index])
