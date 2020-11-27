@@ -107,4 +107,4 @@ class SpanModel(nn.Module):
         rnn_out = self.rnn(emb_out, hidden)
         att_out = self.attention(rnn_out)
         scores = self.classifier(att_out) #seq_len, bsz, nclasses
-        return scores
+        return scores.permute(1,0,2).contiguous() #bsz, seq_len, nclasses

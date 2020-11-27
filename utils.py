@@ -10,6 +10,16 @@ import pdb
 exclude = set(string.punctuation)
 exclude2 = set([',','.','?','"','!'])
 
+
+def f1_metric(target, prediction):
+    f1 = []
+    for y_t, y_p in zip(target, prediction):
+        P = 1. * len(set(y_t) & set(y_p))/len(set(y_p))
+        R = 1. * len(set(y_t) & set(y_p))/len(set(y_t))
+        f1.append(2.*P*R / (P + R))
+    return np.mean(f1)
+    
+
 def span2target(span, text):
     tokens = re.split(' |\n',text)
     target = [0]*len(tokens)
@@ -120,7 +130,7 @@ class DataIns(object):
         return len(self.data)
 
 class DataSet(object):
-    def __init__(self, df, dictionary):
+    def __init__(self, df, dictionary, is_train=True):
         self._data = []
         self.data_list = []
         self.dictionary = dictionary
@@ -128,9 +138,12 @@ class DataSet(object):
             di = DataIns(row, dictionary)
             self.data_list.append(di)
             self._data.append({'text':di.raw_text, 'spans':di.spans})
-        self.data, self.target, self.mask = self._pack()
+        self._data, self._target, self._mask = self._pack(is_train=is_train)
+
+    def get_tensor(self):
+        return self._data, self._target, self._mask
         
-    def _pack(self):
+    def _pack(self, is_train=True):
         max_len = max([len(x) for x in self.data_list])
         mask = []
         targets = []
@@ -139,7 +152,9 @@ class DataSet(object):
             mask.append([1]*len(di)+[0]*(max_len - len(di)))
             targets.append(di.target + [-1]*(max_len - len(di)))
             seqs.append(di.data + [self.dictionary.word2idx['<pad>'] for _ in range(max_len - len(di))])
-        return torch.tensor(seqs, dtype=torch.long).t(), torch.tensor(targets, dtype=torch.long), torch.tensor(mask, dtype=torch.long)
+        with torch.set_grad_enabled(is_train):
+            se, ta, ma = torch.tensor(seqs, dtype=torch.long).t(), torch.tensor(targets, dtype=torch.long), torch.tensor(mask, dtype=torch.long)
+        return se, ta, ma
 
     def __getitem__(self, index):
         return self._data[index]
