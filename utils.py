@@ -107,7 +107,13 @@ def target2span(target, text):
 class Dictionary(object):
     def __init__(self, path=''):
         self.word2idx = dict()
+        self.char2idx = dict()
         self.idx2word = list()
+        self.idx2char = list()
+        chars = list(string.ascii_lowercase)+[str(i) for i in range(10)]+['*','<','>','?']
+        for i, ch in enumerate(chars):
+            self.idx2char.append(ch)
+            self.char2idx[ch] = i
         if path != '':
             words = json.loads(open(path, 'r').readline())
             for item in words:
@@ -118,6 +124,9 @@ class Dictionary(object):
             self.idx2word.append(word)
             self.word2idx[word] = len(self.idx2word) - 1
         return self.word2idx[word]
+
+    def cdict_len(self):
+        return len(self.idx2char)
 
     def __len__(self):
         return len(self.idx2word)
@@ -139,14 +148,18 @@ class DataIns(object):
         self.spans = df['spans']
         self.dictionary = dictionary
         self.target = span2target(df['spans'], df['text'])
-        self.data = self._pack()
+        self.data_w, self.data_c = self._pack()
     
     def _pack(self):
         cleaned = clean_str(self.raw_text)
-        return [self.dictionary.word2idx[y] for y in cleaned]
+        word_enc = [self.dictionary.word2idx[y] for y in cleaned]
+        char_enc = []
+        for tk in cleaned:
+            char_enc.append([self.dictionary.char2idx[ch] for ch in tk])
+        return word_enc, char_enc
 
     def __len__(self):
-        return len(self.data)
+        return len(self.data_w)
 
 class DataSet(object):
     def __init__(self, df, dictionary, is_train=True):
@@ -157,23 +170,33 @@ class DataSet(object):
             di = DataIns(row, dictionary)
             self.data_list.append(di)
             self._data_raw.append({'text':di.raw_text, 'spans':json.loads(di.spans)})
-        self._data, self._target, self._mask = self._pack(is_train=is_train)
+        self._data_w, self._data_c, self._target, self._mask = self._pack(is_train=is_train)
 
     def get_tensor(self):
-        return self._data, self._target, self._mask
+        return self._data_w, self._data_c, self._target, self._mask
         
     def _pack(self, is_train=True):
-        max_len = max([len(x) for x in self.data_list])
+        max_wlen = max([len(x) for x in self.data_list])
+        max_clen = -1
+        for x in self.data_list:
+            max_clen = max(max([len(c) for c in x.data_c]), max_clen)
         mask = []
         targets = []
         seqs = []
+        chars = []
         for di in self.data_list:
-            mask.append([1]*len(di)+[0]*(max_len - len(di)))
-            targets.append(di.target + [-1]*(max_len - len(di)))
-            seqs.append(di.data + [self.dictionary.word2idx['<pad>'] for _ in range(max_len - len(di))])
+            mask.append([1]*len(di)+[0]*(max_wlen - len(di)))
+            targets.append(di.target + [-1]*(max_wlen - len(di)))
+            seqs.append(di.data_w + [self.dictionary.word2idx['<pad>'] for _ in range(max_wlen - len(di))])
+            char_t = [] 
+            for c_list in di.data_c:
+                char_t.append(c_list + [self.dictionary.char2idx['?'] for _ in range(max_clen - len(c_list))])
+            for _ in range(max_wlen - len(di.data_c)):
+                char_t.append([self.dictionary.char2idx['?'] for _ in range(max_clen)])
+            chars.append(char_t)
         with torch.set_grad_enabled(is_train):
-            se, ta, ma = torch.tensor(seqs, dtype=torch.long).t(), torch.tensor(targets, dtype=torch.long), torch.tensor(mask, dtype=torch.long)
-        return se, ta, ma
+            se, ce, ta, ma = torch.tensor(seqs, dtype=torch.long).t(), torch.tensor(chars, dtype=torch.long).permute(2,1,0).contiguous(), torch.tensor(targets, dtype=torch.long), torch.tensor(mask, dtype=torch.long)
+        return se, ce, ta, ma
 
     def __getitem__(self, index):
         return self._data_raw[index]

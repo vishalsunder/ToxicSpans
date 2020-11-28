@@ -76,10 +76,10 @@ class Trainer:
             last = min(len(data_val), i+bsz)
             indata = data_val[i:last]
             data_batch = DataSet(indata, self.dictionary, is_train=False)
-            data, targets, mask = data_batch.get_tensor()
-            data, targets, mask = data.to(self.device), targets.to(self.device), mask.to(self.device)
-            hidden = model.init_hidden(data.size(1))
-            output = model.forward(data, hidden, mask)
+            data_w, data_c, targets, mask = data_batch.get_tensor() 
+            data_w, data_c, targets, mask = data_w.to(self.device), data_c.to(self.device), targets.to(self.device), mask.to(self.device)
+            hidden = model.init_hidden(data_w.size(1))
+            output = model.forward(data_w, data_c, hidden, mask)
 
             #prediction = torch.max(output, dim=2)[1] # bsz, conv_len
             #prediction_ = prediction[mask != 0]
@@ -104,10 +104,10 @@ class Trainer:
         last = min(len(data), i+bsz)
         indata = data[i:last]
         data_batch = DataSet(indata, self.dictionary)
-        data, targets, mask = data_batch.get_tensor() 
-        data, targets, mask = data.to(self.device), targets.to(self.device), mask.to(self.device)
-        hidden = model.init_hidden(data.size(1))
-        output = model.forward(data, hidden, mask) # output --> bsz, seq_len, nclasses
+        data_w, data_c, targets, mask = data_batch.get_tensor() 
+        data_w, data_c, targets, mask = data_w.to(self.device), data_c.to(self.device), targets.to(self.device), mask.to(self.device)
+        hidden = model.init_hidden(data_w.size(1))
+        output = model.forward(data_w, data_c, hidden, mask) # output --> bsz, seq_len, nclasses
         output_ = output[mask != 0]
         targets_ = targets[mask != 0]
         loss = self.criterion(output_, targets_)

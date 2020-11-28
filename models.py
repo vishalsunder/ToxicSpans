@@ -62,23 +62,65 @@ class NoAttention(nn.Module):
         super(NoAttention, self).__init__()
         pass
 
-    def forward(self, input):
-        return input
+    def forward(self, input, input_raw=None, mask=None):
+        return torch.mean(input, dim=0, keepdim=False)
 
 class Attention(NoAttention):
-    def __init__(self, inp_size, dropout):
-        super(Attention, self).__init__()
-        self.Wq = nn.Linear(inp_size, inp_size, bias=False)
-        self.Wk = nn.Linear(inp_size, inp_size, bias=False)
+    def __init__(self, inp_size, attention_unit, attention_hops, dictionary, dropout):
+        super(Attention,self).__init__()
+        self.ws1 = nn.Linear(inp_size, attention_unit, bias=False)
+        self.ws2 = nn.Linear(attention_unit, attention_hops, bias=False)
+        self.dictionary = dictionary
+        self.attention_hops = attention_hops
         self.drop = nn.Dropout(dropout)
 
-    def forward(self, input, mask): # seq_len, bsz, inp_size; mask = bsz, seq_len
-        query = self.Wq(self.drop(input))
-        key = self.Wk(self.drop(input))
-        mask_ = 1. - torch.cat([mask.unsqueeze(1) for _ in range(input.size(0))], dim=1)
-        align = torch.tanh(torch.bmm(query.permute(1,0,2), key.permute(1,2,0))/(input.size(2))**0.5) - 10000*mask_ # bsz, seq_len, seq_len
-        align = torch.softmax(align, dim=2)
-        return torch.bmm(align, input.permute(1,0,2)).permute(1,0,2)
+    def get_mask(self,input_raw):
+        transformed_inp = torch.transpose(input_raw, 0, 1).contiguous()  # [bsz, seq_len]
+        transformed_inp = transformed_inp.view(input_raw.size()[1], 1, input_raw.size()[0])  # [bsz, 1, seq_len]
+        concatenated_inp = [transformed_inp for i in range(self.attention_hops)]
+        concatenated_inp = torch.cat(concatenated_inp, 1)  # [bsz, hop, seq_len]
+        mask = (concatenated_inp == self.dictionary.char2idx['?']).float()
+        mask = mask[:,:,:input_raw.size(0)]
+        return mask
+
+    def forward(self, input, input_raw=None, mask=None): # input --> (seq_len, bsize, inp_size) input_raw --> (seq_len, bsize)
+        inp = torch.transpose(input, 0, 1).contiguous()
+        size = inp.size()  # [bsz, seq_len, inp_size]
+        compressed_embeddings = inp.view(-1, size[2])  # [bsz*seq_len, inp_size]
+        if input_raw is not None:
+            mask = self.get_mask(input_raw) # need this to mask out the <pad>s
+        else:
+            assert mask is not None
+        hbar = torch.tanh(self.ws1(self.drop(compressed_embeddings)))  # [bsz*seq_len, attention-unit]
+        alphas = self.ws2(self.drop(hbar)).view(size[0], size[1], -1)  # [bsz, seq_len, hop]
+        alphas = torch.transpose(alphas, 1, 2).contiguous()  # [bsz, hop, seq_len]
+        penalized_alphas = alphas + -10000*mask
+        alphas = F.softmax(penalized_alphas.view(-1, size[1]),1)  # [bsz*hop, seq_len]
+        alphas = alphas.view(size[0], self.attention_hops, size[1])  # [bsz, hop, seq_len]
+        out_agg, attention = torch.bmm(alphas, inp), alphas # [bsz, hop, inp_size], [bsz, hop, seq_len] 
+        return out_agg.squeeze(1)
+
+class CharEncoder(nn.Module):
+    def __init__(self,config):
+        super(CharEncoder, self).__init__()
+        self.emb = Embed(config['dictionary'].cdict_len(), config['dictionary'], int(config['ninp']/2), word_vector = None)
+        self.rnn = RNN(int(config['ninp']/2), int(config['nhid']/2), config['nlayers'], config['dropout'])
+        if config['attention']:
+            self.attention = Attention(config['nhid'], config['attention-unit'], 1, config['dictionary'], config['dropout'])
+        else:
+            self.attention = NoAttention()
+        self.drop = nn.Dropout(config['dropout'])
+
+    def init_hidden(self,bsz):
+        return self.rnn.init_hidden(bsz)
+
+    def forward(self, input, hidden): # char_len, word_len, bsz --> word_len, bsz, hidd_size
+        emb_out = self.emb(input) # char_len, word_len, bsz, emb_size
+        char_len, word_len, bsz, emb_size = emb_out.size()
+        emb_out = emb_out.view(char_len, -1, emb_size)
+        rnn_out = self.rnn(emb_out, hidden)
+        out_agg = self.attention(rnn_out,input.view(char_len, -1))
+        return out_agg.view(word_len, bsz, -1)
 
 class Classifier(nn.Module):
     def __init__(self, inp_size, nclasses, dropout):
@@ -94,19 +136,18 @@ class SpanModel(nn.Module):
     def __init__(self, config):
         super(SpanModel, self).__init__()
         self.emb = Embed(config['ntoken'], config['dictionary'], config['ninp'], config['word-vector'])
-        self.rnn = RNN(config['ninp'], config['nhid'], config['nlayers'], config['dropout'])
-        if config['attention']:
-            self.attention = Attention(2 * config['nhid'], config['dropout'])
-        else:
-            self.attention = NoAttention()
+        self.char_emb = CharEncoder(config)
+        self.rnn = RNN(2 * config['ninp'], config['nhid'], config['nlayers'], config['dropout'])
         self.classifier = Classifier(2 * config['nhid'], config['nclasses'], config['dropout'])
     
     def init_hidden(self, bsz):
         return self.rnn.init_hidden(bsz)
 
-    def forward(self, input, hidden, mask):
-        emb_out = self.emb(input)
+    def forward(self, input_w, input_c, hidden, mask):
+        emb_word = self.emb(input_w)
+        hidden_c = self.char_emb.init_hidden(input_c.size(1)*input_c.size(2))
+        emb_char = self.char_emb(input_c, hidden_c)
+        emb_out = torch.cat([emb_word,emb_char], dim=2)
         rnn_out = self.rnn(emb_out, hidden)
-        att_out = self.attention(rnn_out, mask)
-        scores = self.classifier(att_out) #seq_len, bsz, nclasses
+        scores = self.classifier(rnn_out) #seq_len, bsz, nclasses
         return scores.permute(1,0,2).contiguous() #bsz, seq_len, nclasses

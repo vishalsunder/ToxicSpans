@@ -28,6 +28,8 @@ if __name__ == "__main__":
                         help='location of the test data, should be a csv file')
     parser.add_argument('--valid-data', type=str, default='',
                         help='location of the validation data, should be a csv file')
+    parser.add_argument('--attention-unit', type=int, default=350,
+                        help='number of attention unit')
     parser.add_argument('--dev-ratio', type=float, default=0.1, help='fraction of train-dev data to use for dev')
     parser.add_argument('--validation', action='store_true', help='use cross validation')
     parser.add_argument('--log', type=str, default='simple.log',
@@ -109,7 +111,8 @@ if __name__ == "__main__":
                  'nlayers':args.nlayers,
                  'dropout':args.dropout,
                  'nclasses':args.nclasses,
-                 'attention':args.attention
+                 'attention':args.attention,
+                 'attention-unit':args.attention_unit
                 })
     model = model.to(device)
     if args.optimizer == 'Adam':
@@ -130,7 +133,6 @@ if __name__ == "__main__":
         trainer.data_shuffle()
         train_loss, model = trainer.epoch(epoch+1, model)
         f1,_,_ = trainer.evaluate(model, data_val, bsz=args.test_bsize)
-        epoch = epoch + 1
         if best_f1 is not None and f1 < best_f1:
             running_pat -= 1
         if not best_f1 or f1 > best_f1:
@@ -140,6 +142,7 @@ if __name__ == "__main__":
         print('-' * 80)
         print(f'| stage 1 epoch {epoch+1} | train loss {train_loss:.8f} | dev f1 {f1:.4f} | patience left {running_pat}/{args.patience}')
         print('-' * 80)
+        epoch = epoch + 1
 
     best_boost_f1 = best_f1
     if args.stage2 > 0:
@@ -159,7 +162,6 @@ if __name__ == "__main__":
             trainer.data_shuffle()
             train_loss, model = trainer.epoch(epoch+1, model)
             f1,_,_ = trainer.evaluate(model, data_val, bsz=args.test_bsize)
-            epoch = epoch + 1
             if best_boost_f1 is not None and f1 < best_boost_f1:
                 running_pat -= 1
             if not best_boost_f1 or f1 > best_boost_f1:
@@ -169,6 +171,7 @@ if __name__ == "__main__":
             print('-' * 75)
             print(f'| stage 2 epoch {epoch+1} | train loss {train_loss:.8f} | dev f1 {f1:.4f} | patience left {running_pat}/{args.stage2}')
             print('-' * 75)
+            epoch = epoch + 1
 
     print(f'| best dev f1. {best_boost_f1:.4f} |')
     if data_test is not None:
