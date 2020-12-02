@@ -13,6 +13,7 @@ import numpy as np
 import random
 import os
 import copy
+from torchcrf import CRF
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -64,6 +65,8 @@ if __name__ == "__main__":
                         help='type of optimizer')
     parser.add_argument('--attention', action='store_true',
                         help='whether to use dot product attention')
+    parser.add_argument('--crf', action='store_true',
+                        help='whether to use crf for prediction')
 
     args = parser.parse_args()
     
@@ -102,7 +105,10 @@ if __name__ == "__main__":
     if args.validation:
         assert data_validation is not None
         data_test = data_validation
-    criterion = nn.CrossEntropyLoss()
+    if args.crf:
+        criterion = CRF(args.nclasses).to(device)
+    else:
+        criterion = nn.CrossEntropyLoss()
     model = SpanModel({'ntoken':n_token,
                  'dictionary':dictionary,
                  'ninp':args.emsize,

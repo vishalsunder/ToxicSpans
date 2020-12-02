@@ -1,6 +1,7 @@
 *.sw*
 data/glove.42B.300d.txt.pt
 scribble.py
+hyperparam.py
 logs/
 *.sh
 __pycache__*

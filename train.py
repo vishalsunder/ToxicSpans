@@ -64,6 +64,15 @@ class Trainer:
                 pdb.set_trace()
         return output
 
+    def get_span_crf(self, prediction, data):
+        output = []
+        for i, pred_tens in enumerate(prediction):
+            try:
+                output.append(target2span(prediction[i], data[i]['text']))
+            except:
+                pdb.set_trace()
+        return output
+
     def evaluate(self, model, data_val, bsz = 32):
         model.eval()
         total_correct = 0
@@ -80,14 +89,17 @@ class Trainer:
             data_w, data_c, targets, mask = data_w.to(self.device), data_c.to(self.device), targets.to(self.device), mask.to(self.device)
             hidden = model.init_hidden(data_w.size(1))
             output = model.forward(data_w, data_c, hidden, mask)
-
+            if self.args.crf:
+                output_dec = self.criterion.decode(output.transpose(0,1), mask=mask.type(torch.uint8).transpose(0,1))
+                prediction = self.get_span_crf(output_dec, data_batch)
+            else:
+                prediction = self.get_span(torch.max(output, dim=2)[1].cpu(), mask.cpu(), data_batch) # bsz, seq_len
             #prediction = torch.max(output, dim=2)[1] # bsz, conv_len
             #prediction_ = prediction[mask != 0]
             #targets_ = targets[mask != 0]
             #y_pred.extend(prediction_.cpu().tolist())
             #y_true.extend(targets_.cpu().tolist())
 
-            prediction = self.get_span(torch.max(output, dim=2)[1].cpu(), mask.cpu(), data_batch) # bsz, seq_len
             y_pred.extend(prediction)
             y_true.extend([data_batch[i]['spans'] for i in range(len(data_batch))])
 
@@ -108,9 +120,12 @@ class Trainer:
         data_w, data_c, targets, mask = data_w.to(self.device), data_c.to(self.device), targets.to(self.device), mask.to(self.device)
         hidden = model.init_hidden(data_w.size(1))
         output = model.forward(data_w, data_c, hidden, mask) # output --> bsz, seq_len, nclasses
-        output_ = output[mask != 0]
-        targets_ = targets[mask != 0]
-        loss = self.criterion(output_, targets_)
+        if self.args.crf:
+            loss = -1. * self.criterion(output.transpose(0,1), targets.transpose(0,1), mask=mask.type(torch.uint8).transpose(0,1), reduction='mean')
+        else:
+            output_ = output[mask != 0]
+            targets_ = targets[mask != 0]
+            loss = self.criterion(output_, targets_)
         return loss
 
     def epoch(self, ep, model):

@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import os
 import torch.nn.functional as F
+from torchcrf import CRF
 from transformers import BertModel, DistilBertModel
 
 class Embed(nn.Module):
@@ -137,7 +138,7 @@ class SpanModel(nn.Module):
         super(SpanModel, self).__init__()
         self.emb = Embed(config['ntoken'], config['dictionary'], config['ninp'], config['word-vector'])
         self.char_emb = CharEncoder(config)
-        self.rnn = RNN(2 * config['ninp'], config['nhid'], config['nlayers'], config['dropout'])
+        self.rnn = RNN(2 * config['ninp'], config['nhid'], config['nlayers'], config['dropout'])# 2*
         self.classifier = Classifier(2 * config['nhid'], config['nclasses'], config['dropout'])
     
     def init_hidden(self, bsz):
@@ -148,6 +149,6 @@ class SpanModel(nn.Module):
         hidden_c = self.char_emb.init_hidden(input_c.size(1)*input_c.size(2))
         emb_char = self.char_emb(input_c, hidden_c)
         emb_out = torch.cat([emb_word,emb_char], dim=2)
-        rnn_out = self.rnn(emb_out, hidden)
+        rnn_out = self.rnn(emb_out, hidden) #emb_out
         scores = self.classifier(rnn_out) #seq_len, bsz, nclasses
         return scores.permute(1,0,2).contiguous() #bsz, seq_len, nclasses
