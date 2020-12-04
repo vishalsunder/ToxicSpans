@@ -49,6 +49,8 @@ if __name__ == "__main__":
                         help='use CUDA')
     parser.add_argument('--stage2', type=int, default=10,
                         help='whether to use stage 2')
+    parser.add_argument('--num-heads', type=int, default=2,
+                        help='number of attention heads')
     parser.add_argument('--prebert-path', type=str, default='/homes/3/sunder.9/vp-vishal/bert/pretrained_models/',
                         help='path to save the final model')
     parser.add_argument('--dictionary', type=str, default='dict.json',
@@ -118,7 +120,8 @@ if __name__ == "__main__":
                  'dropout':args.dropout,
                  'nclasses':args.nclasses,
                  'attention':args.attention,
-                 'attention-unit':args.attention_unit
+                 'attention-unit':args.attention_unit,
+                 'num-heads':args.num_heads
                 })
     model = model.to(device)
     if args.optimizer == 'Adam':

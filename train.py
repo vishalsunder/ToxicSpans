@@ -136,6 +136,7 @@ class Trainer:
             j=(batch+1) / (len(list(range(0, len(self.data), self.args.batch_size))))
             loss = self.forward(i, model, self.data, self.args.batch_size)
             self.opt_step(model, loss)
+            torch.cuda.empty_cache()
             total_loss.append(loss.item())
             sys.stdout.write("[%-20s] %d%%" % ('='*int(20*j), 100*j))
             sys.stdout.flush()
