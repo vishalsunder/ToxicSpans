@@ -141,7 +141,7 @@ if __name__ == "__main__":
     while running_pat > 0:
         trainer.data_shuffle()
         train_loss, model = trainer.epoch(epoch+1, model)
-        f1,_,_ = trainer.evaluate(model, data_val, bsz=args.test_bsize)
+        f1,_,_,_,_,_ = trainer.evaluate(model, data_val, bsz=args.test_bsize)
         if best_f1 is not None and f1 < best_f1:
             running_pat -= 1
         if not best_f1 or f1 > best_f1:
@@ -170,7 +170,7 @@ if __name__ == "__main__":
         while running_pat > 0:
             trainer.data_shuffle()
             train_loss, model = trainer.epoch(epoch+1, model)
-            f1,_,_ = trainer.evaluate(model, data_val, bsz=args.test_bsize)
+            f1,_,_,_,_,_ = trainer.evaluate(model, data_val, bsz=args.test_bsize)
             if best_boost_f1 is not None and f1 < best_boost_f1:
                 running_pat -= 1
             if not best_boost_f1 or f1 > best_boost_f1:
@@ -185,9 +185,17 @@ if __name__ == "__main__":
     print(f'| best dev f1. {best_boost_f1:.4f} |')
     if data_test is not None:
         best_model = best_model.to(device)
-        f1, y_pred, y_true = trainer.evaluate(best_model, data_test, bsz=args.test_bsize)
+        f1, pr, re, f1_full, y_pred, y_true = trainer.evaluate(best_model, data_test, bsz=args.test_bsize)
+        #df_analysis = pd.DataFrame.from_dict({'text': data_test['text'].to_list(), 'y_true':y_true, 'y_pred':y_pred, 'f1':f1_full})
+        #df_analysis.to_csv('error_analysis.csv')
         print('-' * 75)
-        print(f'| test F1 {f1:.4f} |')
+        print(f'| precision {pr:.4f} | recall {re:.4f} | F1 {f1:.4f} |')
+        print('-' * 75)
+        f1, pr, re, f1_full, y_pred, y_true = trainer.evaluate(best_model, data_train, bsz=args.test_bsize)
+        #df_analysis = pd.DataFrame.from_dict({'text': data_test['text'].to_list(), 'y_true':y_true, 'y_pred':y_pred, 'f1':f1_full})
+        #df_analysis.to_csv('error_analysis.csv')
+        print('-' * 75)
+        print(f'| precision {pr:.4f} | recall {re:.4f} | F1 {f1:.4f} |')
         print('-' * 75)
 
     if args.validation:

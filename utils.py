@@ -13,21 +13,33 @@ exclude2 = set([',','.','?','"','!'])
 
 def f1_metric(target, prediction):
     f1 = []
+    pr = []
+    re = []
     for y_t, y_p in zip(target, prediction):
         if len(set(y_p)) == 0 and len(set(y_t)) == 0:
             f1.append(1.)
+            pr.append(1.)
+            re.append(1.)
         elif len(set(y_p)) == 0 and len(set(y_t)) != 0:
             f1.append(0.)
+            pr.append(0.)
+            re.append(0.)
         elif len(set(y_t)) == 0:
-            f1.append(0.)                
+            f1.append(0.)
+            pr.append(0.)
+            re.append(0.)                
         else:
             P = 1. * len(set(y_t) & set(y_p))/len(set(y_p))
             R = 1. * len(set(y_t) & set(y_p))/len(set(y_t))
             if P + R == 0:
                 f1.append(0.)
+                pr.append(0.)
+                re.append(0.)
             else:
                 f1.append(2.*P*R / (P + R))
-    return np.mean(f1)
+                pr.append(P)
+                re.append(R)
+    return np.mean(f1), np.mean(pr), np.mean(re), f1
     
 def split_dev(data, frac=0.1):
     dev_len = int(frac*len(data))

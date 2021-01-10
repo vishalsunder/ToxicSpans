@@ -80,7 +80,7 @@ class NoAttention(nn.Module):
         pass
 
     def forward(self, input, input_raw=None, mask=None):
-        return torch.mean(input, dim=0, keepdim=False)
+        return input
 
 class Attention(NoAttention):
     def __init__(self, inp_size, attention_hops, dropout):
@@ -136,7 +136,7 @@ class SpanModel(nn.Module):
         super(SpanModel, self).__init__()
         self.emb = Embed(config['ntoken'], config['dictionary'], config['ninp'], config['word-vector'])
         self.char_emb = CharEncoderCnn(config)
-        self.rnn = RNN(2 * config['ninp'], config['nhid'], config['nlayers'], config['dropout'])# 2*
+        self.rnn = RNN(config['ninp'], config['nhid'], config['nlayers'], config['dropout'])# 2*
         self.classifier = Classifier(2 * config['nhid'], config['nclasses'], config['dropout'])
         if config['attention']:
             self.attention = Attention(2 * config['nhid'], config['num-heads'], config['dropout'])
@@ -149,9 +149,9 @@ class SpanModel(nn.Module):
     def forward(self, input_w, input_c, hidden, mask):
         emb_word = self.emb(input_w)
         #hidden_c = self.char_emb.init_hidden(input_c.size(1)*input_c.size(2))
-        emb_char = self.char_emb(input_c)#, hidden_c)
-        emb_out = torch.cat([emb_word,emb_char], dim=2)
-        rnn_out = self.rnn(emb_out, hidden) #emb_out
+        #emb_char = self.char_emb(input_c)
+        #emb_out = torch.cat([emb_word,emb_char], dim=2)
+        rnn_out = self.rnn(emb_word, hidden) #emb_out
         att_out = self.attention(rnn_out, mask=mask)
-        scores = self.classifier(rnn_out) #seq_len, bsz, nclasses
+        scores = self.classifier(att_out) #seq_len, bsz, nclasses
         return scores.permute(1,0,2).contiguous() #bsz, seq_len, nclasses

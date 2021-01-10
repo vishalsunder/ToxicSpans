@@ -1,7 +1,9 @@
 *.sw*
+screen*
 data/glove.42B.300d.txt.pt
 scribble.py
 hyperparam.py
 logs/
-*.sh
+run_gs.sh
+*.csv
 __pycache__*

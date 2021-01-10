@@ -89,6 +89,7 @@ class Trainer:
             data_w, data_c, targets, mask = data_w.to(self.device), data_c.to(self.device), targets.to(self.device), mask.to(self.device)
             hidden = model.init_hidden(data_w.size(1))
             output = model.forward(data_w, data_c, hidden, mask)
+            torch.cuda.empty_cache()
             if self.args.crf:
                 output_dec = self.criterion.decode(output.transpose(0,1), mask=mask.type(torch.uint8).transpose(0,1))
                 prediction = self.get_span_crf(output_dec, data_batch)
@@ -108,9 +109,9 @@ class Trainer:
             sleep(0)
         print('\n')
         #pdb.set_trace()
-        f1 = f1_metric(y_true, y_pred)
+        f1, pr, re, f1_full = f1_metric(y_true, y_pred)
         #f1 = f1_score(y_true, y_pred, list(set(y_true)), average='macro')
-        return f1, y_pred, y_true
+        return f1, pr, re, f1_full, y_pred, y_true
 
     def forward(self, i, model, data, bsz=32):
         last = min(len(data), i+bsz)
